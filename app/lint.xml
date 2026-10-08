@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Adaptive icons require API 26 resources even though minSdk is already 26. -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+    <!-- The themed monochrome layer is supplied by the API 33 icon resource. -->
+    <issue id="MonochromeLauncherIcon">
+        <ignore path="src/main/res/mipmap-anydpi-v26/ic_launcher.xml" />
+    </issue>
+</lint>

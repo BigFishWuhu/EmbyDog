@@ -1,0 +1,12 @@
+.gradle/
+.kotlin/
+.idea/
+build/
+**/build/
+local.properties
+.android-sdk/
+commandlinetools-win.zip
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
