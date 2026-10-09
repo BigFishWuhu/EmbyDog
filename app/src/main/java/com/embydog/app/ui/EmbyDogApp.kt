@@ -16,9 +16,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
+import androidx.compose.runtime.*
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.layout.safeDrawingPadding
+import com.embydog.app.feature.settings.ProfileScreen
+import com.embydog.app.feature.settings.UpdateScreen
+import com.embydog.app.feature.settings.UpdateViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -52,10 +57,10 @@ fun EmbyDogApp(sessionViewModel: SessionViewModel = hiltViewModel(), settingsVie
         val settingsError by settingsViewModel.error.collectAsStateWithLifecycle()
         when (val state = rootState) {
             RootState.Loading -> LoadingScreen()
-            RootState.SignedOut -> LoginRoute()
-            is RootState.SignedIn -> key(state.session.serverId, state.session.userId) {
+            RootState.SignedOut -> SignedOutProfiles(sessionViewModel)
+            is RootState.SignedIn -> key(state.session.serverUrl, state.session.userId, state.session.accessToken) {
                 settings?.let { preferences ->
-                    SignedInNavigation(state.session, preferences, settingsError, settingsViewModel, sessionViewModel::logout)
+                    SignedInNavigation(state.session, preferences, settingsError, settingsViewModel, sessionViewModel)
                 } ?: LoadingScreen()
             }
         }
@@ -64,8 +69,14 @@ fun EmbyDogApp(sessionViewModel: SessionViewModel = hiltViewModel(), settingsVie
 
 @Composable
 private fun SignedInNavigation(session: Session, settings: AppSettings, settingsError: String?,
-    settingsViewModel: SettingsViewModel, onLogout: () -> Unit) {
+    settingsViewModel: SettingsViewModel, sessionViewModel: SessionViewModel) {
     val navController = rememberNavController()
+    DisposableEffect(navController) {
+        onDispose {
+            listOf("home", "browse/search", "browse/favorites").forEach { navController.clearBackStack(it) }
+            navController.popBackStack(navController.graph.id, true)
+        }
+    }
     val openLibrary: (MediaItem) -> Unit = { item ->
         navController.navigate("library/${item.id}/${Uri.encode(item.name)}")
     }
@@ -103,6 +114,7 @@ private fun SignedInNavigation(session: Session, settings: AppSettings, settings
                 onOpenLibrary = openLibrary,
                 onOpenItem = openItem,
                 onSettings = openSettings,
+                onProfiles = { navController.navigate("profiles") { launchSingleTop = true } },
             )
         }
         listOf("search", "favorites").forEach { mode ->
@@ -112,7 +124,23 @@ private fun SignedInNavigation(session: Session, settings: AppSettings, settings
         }
         composable("settings") {
             SettingsScreen(settings, settingsError, settingsViewModel::setOrientation,
-                onBack = navController::navigateUp, onLogout = onLogout)
+                onBack = navController::navigateUp, onLogout = sessionViewModel::logout,
+                onProfiles = { navController.navigate("profiles") }, onUpdate = { navController.navigate("updates") })
+        }
+        composable("profiles") {
+            val profiles by sessionViewModel.profiles.collectAsStateWithLifecycle()
+            val error by sessionViewModel.profileError.collectAsStateWithLifecycle()
+            val busy by sessionViewModel.profileBusy.collectAsStateWithLifecycle()
+            ProfileScreen(profiles, error, busy, { id ->
+                if (id == profiles.activeId) navController.navigateUp() else sessionViewModel.selectProfile(id)
+            }, sessionViewModel::removeProfile, { navController.navigate("add-profile") }, navController::navigateUp)
+        }
+        composable("add-profile") { LoginRoute(onBack = navController::navigateUp, defaultServerUrl = session.serverUrl) }
+        composable("updates") {
+            val updateViewModel: UpdateViewModel = hiltViewModel()
+            val update by updateViewModel.state.collectAsStateWithLifecycle()
+            UpdateScreen(update, updateViewModel::check, updateViewModel::download, updateViewModel::cancel,
+                updateViewModel::installationError, navController::navigateUp)
         }
         composable(
             route = "library/{parentId}/{title}",
@@ -135,7 +163,7 @@ private fun SignedInNavigation(session: Session, settings: AppSettings, settings
             DetailScreen(
                 accessToken = session.accessToken,
                 onBack = navController::navigateUp,
-                onOpenEpisode = { navController.navigate("detail/$it") },
+                onOpenEpisode = { navController.navigate("player/$it") },
                 onPlay = { itemId, selection ->
                     navController.navigate("player/$itemId?audio=${selection.audioIndex ?: -2}" +
                         "&subtitle=${selection.subtitleIndex ?: -2}&sourceId=${Uri.encode(selection.mediaSourceId.orEmpty())}")
@@ -161,8 +189,11 @@ private fun SignedInNavigation(session: Session, settings: AppSettings, settings
 }
 
 @Composable
-private fun LoginRoute(viewModel: LoginViewModel = hiltViewModel()) {
+private fun LoginRoute(viewModel: LoginViewModel = hiltViewModel(), onBack: (() -> Unit)? = null, defaultServerUrl: String = "") {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel) { if (state.serverUrl.isBlank() && defaultServerUrl.isNotBlank()) viewModel.setServerUrl(defaultServerUrl) }
+    LaunchedEffect(state.completed) { if (state.completed) onBack?.invoke() }
+    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
     LoginScreen(
         state = state,
         onServerUrlChange = viewModel::setServerUrl,
@@ -170,6 +201,22 @@ private fun LoginRoute(viewModel: LoginViewModel = hiltViewModel()) {
         onPasswordChange = viewModel::setPassword,
         onLogin = viewModel::login,
     )
+    onBack?.let { IconButton(onClick = it, modifier = Modifier.align(Alignment.TopStart)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "取消添加 profile") } }
+    }
+}
+
+@Composable
+private fun SignedOutProfiles(viewModel: SessionViewModel) {
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    val error by viewModel.profileError.collectAsStateWithLifecycle()
+    val busy by viewModel.profileBusy.collectAsStateWithLifecycle()
+    var showing by remember { mutableStateOf(false) }
+    if (showing) ProfileScreen(profiles, error, busy, viewModel::selectProfile, viewModel::removeProfile,
+        { showing = false }, { showing = false })
+    else Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+        LoginRoute()
+        if (profiles.profiles.isNotEmpty()) TextButton(onClick = { showing = true }, modifier = Modifier.align(Alignment.TopEnd)) { Text("已保存的 profiles") }
+    }
 }
 
 @Composable

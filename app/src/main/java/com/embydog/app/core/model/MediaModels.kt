@@ -85,4 +85,7 @@ data class PlaybackSource(
     val previewUrl: String? = null,
     val seriesId: String? = null,
     val seasonId: String? = null,
+    val userId: String? = null,
+    val playSessionId: String? = null,
+    val isDirectStream: Boolean = false,
 )

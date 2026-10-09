@@ -7,6 +7,13 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// CI supplies these only to the release build; never store signing credentials in the repo.
+val releaseSigning = listOf("EMBYDOG_KEYSTORE_PATH", "EMBYDOG_KEYSTORE_PASSWORD", "EMBYDOG_KEY_ALIAS", "EMBYDOG_KEY_PASSWORD")
+    .associateWith { providers.environmentVariable(it).orNull?.takeIf(String::isNotBlank) }
+require(releaseSigning.values.all { it == null } || releaseSigning.values.all { it != null }) {
+    "Release signing requires all four EMBYDOG_KEYSTORE_* / EMBYDOG_KEY_* environment variables"
+}
+
 android {
     namespace = "com.embydog.app"
     compileSdk = 36
@@ -15,8 +22,10 @@ android {
         applicationId = "com.embydog.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("releaseVersionCode").orNull?.toInt()?.also {
+            require(it in 1..2_100_000_000) { "releaseVersionCode is outside Android's supported range" }
+        } ?: 1
+        versionName = providers.gradleProperty("releaseVersionName").orNull ?: "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -45,8 +54,19 @@ android {
         jvmTarget = "17"
     }
 
+    if (releaseSigning.values.all { it != null }) {
+        signingConfigs.create("release") {
+            storeFile = file(requireNotNull(releaseSigning["EMBYDOG_KEYSTORE_PATH"]))
+            require(storeFile!!.isFile) { "Release keystore file does not exist" }
+            storePassword = releaseSigning["EMBYDOG_KEYSTORE_PASSWORD"]
+            keyAlias = releaseSigning["EMBYDOG_KEY_ALIAS"]
+            keyPassword = releaseSigning["EMBYDOG_KEY_PASSWORD"]
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

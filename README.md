@@ -10,6 +10,10 @@ standard component states and Android 12+ dynamic color.
 - Connect to an Emby server through its public system API.
 - Authenticate with an Emby username and password.
 - Protect the access token with Android Keystore and persist session metadata with DataStore.
+- Save multiple server/account profiles, migrate the legacy login automatically, restore the last active profile and switch without re-entering credentials.
+- Isolate navigation/media ViewModels, authenticated poster cache keys and Media3 cache keys across profiles; removing a profile only removes its local login.
+- Manually check the latest stable GitHub Release from application settings, select ARM64/universal APKs, download with progress/cancellation, and request system installation.
+- Reject updates with missing/mismatched SHA256, incorrect package/version, non-increasing version codes or a different signing certificate; restrict GitHub redirects to trusted HTTPS hosts.
 - Provide a 2 GiB LRU Media3 playback cache foundation.
 - Preserve reverse-proxy base paths when creating API URLs.
 - Browse media libraries, continue-watching items, and recently added media.
@@ -42,6 +46,10 @@ standard component states and Android 12+ dynamic color.
 - Save player entry orientation in application settings: landscape by default, portrait, gravity sensor, or system orientation.
 - Preserve video aspect ratio in both playback engines and inset controls away from system bars/cutouts.
 - Set a session-local sleep timer (1–1440 minutes) to pause or stop and exit the player, with presets, remaining time and cancellation.
+- Play episode cards directly and use a resume-aware detail play button (resumable episode, next-up, then first regular-season episode).
+- Keep browse/favorite card covers uniformly portrait-shaped; landscape episode art is letterboxed instead of changing row height.
+- Report authenticated Emby playback start, 10-second progress heartbeats and stopped positions; pause/background/seek send immediate updates.
+- Send final playback reports on an application-scoped queue after navigation disposal, with bounded retries and a short account-isolated in-memory resume bridge.
 
 ## Requirements
 
@@ -76,9 +84,80 @@ they do not prove that a particular HEVC video or ASS subtitle renders correctly
 
 HTTP is currently permitted because many Emby servers are hosted on a local network without TLS. Internet-facing servers should use HTTPS.
 
+## GitHub Release workflow
+
+`.github/workflows/release.yml` builds signed, minified Release APKs when a `vX.Y.Z`
+tag is pushed. Tags such as `v0.2.0-rc.1` create a prerelease. You can also select
+**Actions → Android Release → Run workflow** and enter an existing tag; the workflow
+builds that tag, not the current branch. An existing Release is never overwritten.
+
+Configure these repository **Settings → Secrets and variables → Actions** secrets first:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64-encoded contents of your persistent release `.jks` keystore |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Signing key alias |
+| `ANDROID_KEY_PASSWORD` | Signing key password |
+
+Generate and securely back up one release key using Android Studio's **Generate
+Signed Bundle / APK** flow. Keep using the same key for updates. Keystores are
+ignored by Git; never commit the key, its Base64 representation or passwords.
+The workflow fails if a signing secret is missing and deletes the temporary key
+after the build. Release-signed APKs cannot upgrade an installed debug-signed APK;
+the initial switch requires an uninstall (which deletes application data).
+
+On Windows, copy the keystore's Base64 representation to the clipboard without
+printing it in the terminal (replace the example path with your own):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\secure\embydog-release.jks')) | Set-Clipboard
+```
+
+Push a version tag after committing and pushing the desired source:
+
+```shell
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
+```
+
+The workflow runs unit tests and Release lint, verifies APK signatures, version
+metadata and native ABIs, then uploads ARM64 and universal APKs, the R8 `mapping.txt`
+and `SHA256SUMS.txt`. Release notes are generated from GitHub's change history.
+Device/live-server tests are not run on hosted runners. `versionName` comes from
+the tag; `versionCode` is the workflow run number plus one, so subsequent releases
+increase it (do not recreate the workflow or reset its run-number history).
+
+Local release signing uses `EMBYDOG_KEYSTORE_PATH`, `EMBYDOG_KEYSTORE_PASSWORD`,
+`EMBYDOG_KEY_ALIAS` and `EMBYDOG_KEY_PASSWORD` environment variables. Version
+overrides are `-PreleaseVersionName=0.1.0 -PreleaseVersionCode=2`. Without signing
+environment variables, local Release builds remain unsigned. The workflow does
+not publish unsigned APKs. Before public distribution, complete the native-library
+license/source-distribution review described below; automation does not satisfy it.
+
+## Profiles and in-app updates
+
+Use the home account icon or **Settings → Profiles** to add/switch server accounts.
+The server URL and Emby user ID identify a profile, so different servers/accounts
+do not overwrite each other. Tokens remain encrypted using Android Keystore;
+passwords are not persisted. Removing/logging out of the active profile selects
+the most recently used remaining profile, or returns to login when none remain.
+Playback orientation settings are application-wide, not per-profile.
+
+**Settings → Check update** queries `BigFishWuhu/EmbyDog` on GitHub only when asked.
+Only stable newer semantic versions are offered. Release APK names and checksums
+must match the release workflow above. A repository without a stable Release shows
+an explanatory message. APK downloads are bounded to 256 MiB, cancellable and do
+not send any Emby credentials. Installation requires Android's permission to install
+from this source and confirmation in the system installer; it is never silent.
+Downloads do not resume after process death. Debug-signed installs cannot update
+to a different release certificate; mismatched APKs are rejected without uninstalling
+the existing app or clearing profiles. Publishing the first signed Release and
+preserving its certificate is required before production in-app updates can work.
+
 ## Next milestone
 
-Add playback progress reporting, automatic next-episode playback, search filters, and offline downloads.
+Add automatic next-episode playback, search filters, durable offline progress synchronization, and offline downloads.
 
 ## Playback modes
 

@@ -17,6 +17,8 @@ import com.embydog.app.core.media.PlaybackFallback
 import com.embydog.app.core.media.PlaybackFallbackPolicy
 import com.embydog.app.core.media.PlaybackSnapshot
 import com.embydog.app.core.media.PlaybackTrackKind
+import com.embydog.app.core.media.PlaybackProgressReporter
+import com.embydog.app.core.media.PlaybackReportDispatcher
 import com.embydog.app.core.model.PlaybackSource
 import com.embydog.app.core.model.PlaybackSelection
 import com.embydog.app.feature.media.MediaRepository
@@ -64,6 +66,7 @@ class PlayerViewModel @Inject constructor(
     private val repository: MediaRepository,
     private val engineFactory: PlaybackEngineFactory,
     private val httpClient: OkHttpClient,
+    private val progressReporter: PlaybackProgressReporter,
 ) : ViewModel() {
     private val itemId = requireNotNull(savedStateHandle.get<String>("itemId"))
     private val _state = MutableStateFlow(PlayerUiState())
@@ -79,14 +82,17 @@ class PlayerViewModel @Inject constructor(
     private var preferredEngine = PlaybackEngineKind.MPV
     private var previewLoader: PlaybackPreviewLoader? = null
     private var previewJob: Job? = null
+    private var reportSession: PlaybackReportDispatcher.Session? = null
+    private var lastReportAt = 0L
     private val sleepTimer = SleepTimerController(viewModelScope, SystemClock::elapsedRealtime) { action ->
         wantedPlayback = false
         activeEngine?.pause()
         cancelSeekPreview()
         if (action == SleepTimerAction.CLOSE) {
             loadJob?.cancel()
-            releaseEngine()
+            releaseEngine(reportStop = true)
         }
+        if (action == SleepTimerAction.PAUSE) reportProgress()
         _state.update { it.copy(engine = activeEngine, closeRequested = action == SleepTimerAction.CLOSE,
             notice = if (action == SleepTimerAction.PAUSE) "定时已到，播放已暂停" else it.notice) }
     }
@@ -102,6 +108,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             while (isActive) {
                 activeEngine?.refresh()
+                if (activeEngine != null && SystemClock.elapsedRealtime() - lastReportAt >= 10_000) reportProgress()
                 delay(500)
             }
         }
@@ -129,14 +136,29 @@ class PlayerViewModel @Inject constructor(
 
     fun togglePlayback() {
         wantedPlayback = !_state.value.playback.isPlaying
-        if (_state.value.playback.hasEnded) seekTo(0)
+        if (_state.value.playback.hasEnded) {
+            seekTo(0)
+            _state.value.source?.let { source ->
+                reportSession = progressReporter.open(source, reportSnapshot(0).copy(hasEnded = false, isPlaying = true))
+            }
+        }
         if (wantedPlayback && foreground) activeEngine?.play() else activeEngine?.pause()
+        reportProgress()
+    }
+
+    fun stopPlayback() {
+        wantedPlayback = false
+        sleepTimer.cancel()
+        loadJob?.cancel()
+        releaseEngine(reportStop = true)
+        _state.update { it.copy(engine = null) }
     }
 
     fun seekTo(positionMs: Long) {
         cancelSeekPreview()
         lastPositionMs = clampSeekPosition(positionMs, _state.value.playback.durationMs)
         activeEngine?.seekTo(lastPositionMs!!)
+        reportProgress(positionMs = lastPositionMs)
     }
 
     fun previewSeek(positionMs: Long, originMs: Long? = null) {
@@ -189,14 +211,35 @@ class PlayerViewModel @Inject constructor(
         sleepTimer.refresh()
         foreground = value
         if (value && wantedPlayback) activeEngine?.play() else activeEngine?.pause()
+        reportProgress()
     }
 
     private fun rememberPosition() {
         val playback = activeEngine?.snapshot?.value ?: return
-        if (playback.positionMs > 0) lastPositionMs = playback.positionMs
+        if (playback.positionMs > 0 || !playback.isBuffering) lastPositionMs = playback.positionMs
     }
 
-    private fun releaseEngine() {
+    private fun reportSnapshot(positionMs: Long? = null): PlaybackSnapshot {
+        val current = activeEngine?.snapshot?.value ?: _state.value.playback
+        val source = _state.value.source
+        val position = positionMs ?: current.positionMs.takeIf { it > 0 || !current.isBuffering }
+            ?: lastPositionMs ?: source?.startPositionMs ?: 0L
+        return current.copy(positionMs = position.coerceAtLeast(0), durationMs = current.durationMs.takeIf { it > 0 } ?: source?.durationMs ?: 0,
+            isPlaying = current.isPlaying && foreground && wantedPlayback)
+    }
+
+    private fun reportProgress(positionMs: Long? = null) {
+        reportSession?.progress(reportSnapshot(positionMs))
+        lastReportAt = SystemClock.elapsedRealtime()
+    }
+
+    private fun stopReporting() {
+        reportSession?.stop(reportSnapshot())
+        reportSession = null
+    }
+
+    private fun releaseEngine(reportStop: Boolean = false) {
+        if (reportStop) stopReporting()
         cancelSeekPreview()
         previewLoader?.close()
         previewLoader = null
@@ -208,6 +251,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun startEngine(source: PlaybackSource, kind: PlaybackEngineKind, notice: String? = null) {
+        if (reportSession?.source?.playSessionId != source.playSessionId || reportSession?.source?.itemId != source.itemId) stopReporting()
         releaseEngine()
         previewLoader = PlaybackPreviewLoader(source, httpClient)
         fallbackPolicy.record(kind)
@@ -223,6 +267,8 @@ class PlayerViewModel @Inject constructor(
             return
         }
         activeEngine = engine
+        if (reportSession == null) reportSession = progressReporter.open(source,
+            reportSnapshot(source.startPositionMs).copy(isPlaying = wantedPlayback && foreground))
         engine.setSpeed(playbackSpeed)
         _state.update { it.copy(engine = engine) }
         engineJob = viewModelScope.launch {
@@ -231,6 +277,7 @@ class PlayerViewModel @Inject constructor(
                 _state.update { it.copy(playback = snapshot.copy(
                     durationMs = snapshot.durationMs.takeIf { duration -> duration > 0 } ?: source.durationMs,
                 )) }
+                if (snapshot.hasEnded) stopReporting()
                 snapshot.failure?.let(::handleFailure)
             }
         }
@@ -247,7 +294,7 @@ class PlayerViewModel @Inject constructor(
             )
             PlaybackFallback.Transcode -> load(forceTranscode = true)
             PlaybackFallback.Stop -> {
-                releaseEngine()
+                releaseEngine(reportStop = true)
                 _state.update { it.copy(engine = null, errorMessage = failure.message) }
             }
         }
@@ -255,7 +302,7 @@ class PlayerViewModel @Inject constructor(
 
     private fun load(forceTranscode: Boolean) {
         loadJob?.cancel()
-        releaseEngine()
+        releaseEngine(reportStop = true)
         _state.update { it.copy(isLoading = true, engine = null, errorMessage = null) }
         loadJob = viewModelScope.launch {
             try {
@@ -276,7 +323,7 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         sleepTimer.cancel()
-        releaseEngine()
+        releaseEngine(reportStop = true)
         super.onCleared()
     }
 }

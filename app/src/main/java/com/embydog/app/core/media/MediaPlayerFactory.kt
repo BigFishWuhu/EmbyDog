@@ -27,6 +27,8 @@ class MediaPlayerFactory @Inject constructor(
         val upstream = OkHttpDataSource.Factory(okHttpClient.forPlayback(source, meter))
         val cacheDataSource = CacheDataSource.Factory()
             .setCache(cache)
+            .setCacheKeyFactory { spec -> com.embydog.app.core.session.privateCacheKey(source.serverUrl,
+                source.userId.orEmpty(), source.accessToken, spec.key ?: spec.uri.toString()) }
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val mediaSourceFactory = DefaultMediaSourceFactory(context)

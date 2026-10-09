@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.ContentScale
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -54,7 +55,9 @@ fun BrowseScreen(accessToken: String, onOpenItem: (MediaItem) -> Unit, onSetting
                     LazyVerticalGrid(columns = GridCells.Adaptive(posterMinimumWidth(LocalDensity.current.fontScale).dp), modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(state.items, key = { it.id }) { item -> MediaCard(item, accessToken, { onOpenItem(item) }, Modifier.fillMaxWidth()) }
+                        items(state.items, key = { it.id }) { item -> MediaCard(item, accessToken, { onOpenItem(item) }, Modifier.fillMaxWidth(),
+                            coverAspectRatio = 2f / 3f,
+                            coverContentScale = if (item.type == "Episode") ContentScale.Fit else ContentScale.Crop) }
                     }
                     state.errorMessage?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
                     if (state.hasMore || state.errorMessage != null) TextButton(

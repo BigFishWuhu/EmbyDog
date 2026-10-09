@@ -17,6 +17,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.embydog.app.core.model.MediaTrackKind
 import com.embydog.app.core.model.MediaTrackOption
 import com.embydog.app.core.model.PlaybackSelection
@@ -29,6 +32,12 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
     val state by viewModel.state.collectAsStateWithLifecycle()
     val episodes by episodeViewModel.state.collectAsStateWithLifecycle()
     val currentItem = state.item
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val seriesId = if (currentItem?.type == "Series") currentItem.id else currentItem?.seriesId
     LaunchedEffect(seriesId, currentItem?.seasonId) {
         seriesId?.let { episodeViewModel.loadSeries(it, currentItem?.seasonId) }
@@ -52,6 +61,21 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
                 val compactHeader = maxWidth >= 320.dp && LocalDensity.current.fontScale < 1.5f
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
                     item {
+                        if (currentItem.canPlay || currentItem.type == "Series") {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                val target = state.playbackTarget
+                                Button(onClick = { target?.let { onPlay(it.id,
+                                    if (it.id == currentItem.id) state.selection else PlaybackSelection()) } },
+                                    enabled = target != null && !state.isTargetLoading, modifier = Modifier.fillMaxWidth()) {
+                                    Icon(Icons.Default.PlayArrow, null)
+                                    Text(if (state.isTargetLoading) "加载播放记录…" else detailPlayLabel(target), Modifier.padding(start = 8.dp))
+                                }
+                                if (currentItem.type == "Series" && target != null) Text(
+                                    listOfNotNull(target.seasonNumber?.let { "第 $it 季" }, target.episodeNumber?.let { "第 $it 集" }, target.name).joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                state.targetError?.let { message -> TextButton(onClick = viewModel::refresh) { Text("$message · 重试") } }
+                            }
+                        }
                         if (compactHeader) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Poster(currentItem, accessToken, Modifier.width(104.dp).aspectRatio(mediaCoverAspectRatio(currentItem.type)))
                             Column(Modifier.weight(1f)) {
@@ -69,10 +93,6 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
                             if (currentItem.canPlay) {
                                 TrackChoice("音轨", state.tracks.filter { it.kind == MediaTrackKind.AUDIO }, state.selection.audioIndex, false, viewModel::selectAudio)
                                 TrackChoice("字幕", state.tracks.filter { it.kind == MediaTrackKind.SUBTITLE }, state.selection.subtitleIndex, true, viewModel::selectSubtitle)
-                                Button(onClick = { onPlay(currentItem.id, state.selection) }, Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                    Icon(Icons.Default.PlayArrow, null)
-                                    Text(if (currentItem.playbackPositionMs > 0) "继续播放" else "播放", Modifier.padding(start = 8.dp))
-                                }
                             }
                         }
                     }
@@ -81,7 +101,7 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
                             Text("剧集", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
                             SeasonDropdown(episodes, episodeViewModel::selectSeason, Modifier.fillMaxWidth().padding(horizontal = 12.dp))
                         }
-                        episodeGridItems(episodes.episodes, columns, accessToken, currentItem.id) { id -> if (id != currentItem.id) onOpenEpisode(id) }
+                        episodeGridItems(episodes.episodes, columns, accessToken, currentItem.id, onOpenEpisode)
                         episodeLoadingItems(episodes, episodeViewModel::retry, episodeViewModel::loadMore)
                     }
                     if (currentItem.overview.isNotBlank()) item {

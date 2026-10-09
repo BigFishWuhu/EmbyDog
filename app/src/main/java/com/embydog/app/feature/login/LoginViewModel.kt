@@ -19,6 +19,7 @@ data class LoginUiState(
     val password: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val completed: Boolean = false,
 )
 
 @HiltViewModel
@@ -43,12 +44,12 @@ class LoginViewModel @Inject constructor(
 
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
-            runCatching {
-                repository.login(snapshot.serverUrl, snapshot.username, snapshot.password)
-            }.onSuccess { session ->
+            try {
+                val session = repository.login(snapshot.serverUrl, snapshot.username, snapshot.password)
                 sessionStore.save(session)
-                _state.update { it.copy(isLoading = false, password = "") }
-            }.onFailure { error ->
+                _state.update { it.copy(isLoading = false, password = "", completed = true) }
+            } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+            catch (error: Exception) {
                 _state.update {
                     it.copy(isLoading = false, errorMessage = error.toUserMessage())
                 }
@@ -71,4 +72,3 @@ class LoginViewModel @Inject constructor(
         else -> "登录失败，请稍后重试"
     }
 }
-

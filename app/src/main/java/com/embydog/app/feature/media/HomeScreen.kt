@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +29,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.runtime.DisposableEffect
 import com.embydog.app.core.model.MediaItem
 import com.embydog.app.core.model.Session
 
@@ -38,14 +43,22 @@ fun HomeScreen(
     onOpenLibrary: (MediaItem) -> Unit,
     onOpenItem: (MediaItem) -> Unit,
     onSettings: () -> Unit,
+    onProfiles: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(session.serverName) },
                 actions = {
+                    IconButton(onClick = onProfiles) { Icon(Icons.Default.AccountCircle, "切换 profile") }
                     IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
                         if (state.isRefreshing) {
                             CircularProgressIndicator(modifier = Modifier.padding(12.dp), strokeWidth = 2.dp)

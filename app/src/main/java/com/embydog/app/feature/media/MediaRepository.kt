@@ -10,6 +10,7 @@ import com.embydog.app.core.model.PlaybackSource
 import com.embydog.app.core.model.Session
 import com.embydog.app.core.model.SubtitleTrack
 import com.embydog.app.core.model.SubtitleMetadata
+import com.embydog.app.core.media.PlaybackProgressReporter
 import com.embydog.app.core.model.describeSubtitle
 import com.embydog.app.core.network.BaseItemDto
 import com.embydog.app.core.network.EmbyApi
@@ -28,6 +29,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class MediaRepository @Inject constructor(
     private val api: EmbyApi,
     private val sessionStore: SessionStore,
+    private val progressReporter: PlaybackProgressReporter,
 ) {
     suspend fun searchItems(query: String, startIndex: Int = 0, limit: Int = 40): MediaPage = withSession { session, baseUrl ->
         val result = api.getItems(apiUrl(baseUrl, "Users/${session.userId}/Items",
@@ -63,6 +65,28 @@ class MediaRepository @Inject constructor(
             val result = api.getItems(apiUrl(baseUrl, "Shows/$seriesId/Episodes", *query.toTypedArray()), session.accessToken)
             MediaPage(result.items.map { it.toMediaItem(baseUrl) }, result.totalRecordCount)
         }
+
+    suspend fun getSeriesPlaybackTarget(seriesId: String): MediaItem? = withSession { session, baseUrl ->
+        progressReporter.recentEpisode(baseUrl.toString(), session.userId, seriesId)?.let { episodeId ->
+            return@withSession getItem(episodeId).withRecentProgress(session)
+        }
+        val resume = optionalPlaybackItems(apiUrl(baseUrl, "Users/${session.userId}/Items/Resume",
+            "ParentId" to seriesId, "Recursive" to true, "IncludeItemTypes" to "Episode", "Limit" to 40,
+            "Fields" to ITEM_FIELDS), session.accessToken).firstOrNull { it.seriesId == seriesId }
+        if (resume != null) return@withSession resume.toMediaItem(baseUrl).withRecentProgress(session)
+        val next = optionalPlaybackItems(apiUrl(baseUrl, "Shows/NextUp", "UserId" to session.userId, "SeriesId" to seriesId,
+            "Limit" to 1, "Fields" to ITEM_FIELDS), session.accessToken).firstOrNull { it.seriesId == seriesId }
+        if (next != null) return@withSession next.toMediaItem(baseUrl).withRecentProgress(session)
+        val seasons = getSeasons(seriesId).sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
+        val firstSeason = seasons.firstOrNull { (it.episodeNumber ?: 0) > 0 } ?: seasons.firstOrNull()
+        getEpisodes(seriesId, firstSeason?.id, limit = 1).items.firstOrNull()
+    }
+
+    private suspend fun optionalPlaybackItems(url: String, token: String): List<BaseItemDto> = try {
+        api.getItems(url, token).items
+    } catch (error: retrofit2.HttpException) {
+        if (error.code() in listOf(400, 404, 405, 501)) emptyList() else throw error
+    }
 
     suspend fun getViews(): List<MediaItem> = withSession { session, baseUrl ->
         api.getItems(
@@ -155,7 +179,8 @@ class MediaRepository @Inject constructor(
                 mediaSourceId = selection.mediaSourceId,
                 audioStreamIndex = selection.audioIndex,
                 subtitleStreamIndex = selection.subtitleIndex,
-                startTimeTicks = item.userData?.playbackPositionTicks ?: 0,
+                startTimeTicks = (progressReporter.recentPosition(baseUrl.toString(), session.userId, item.id)
+                    ?: ((item.userData?.playbackPositionTicks ?: 0) / TICKS_PER_MILLISECOND)) * TICKS_PER_MILLISECOND,
                 enableDirectPlay = !forceTranscode,
                 enableDirectStream = !forceTranscode,
             ),
@@ -182,7 +207,8 @@ class MediaRepository @Inject constructor(
             title = item.name,
             uri = source.playbackUri(item.id, baseUrl, forceTranscode),
             accessToken = session.accessToken,
-            startPositionMs = (item.userData?.playbackPositionTicks ?: 0) / TICKS_PER_MILLISECOND,
+            startPositionMs = progressReporter.recentPosition(baseUrl.toString(), session.userId, item.id)
+                ?: ((item.userData?.playbackPositionTicks ?: 0) / TICKS_PER_MILLISECOND),
             subtitles = source.mediaStreams.mapNotNull { stream ->
                 stream.toExternalSubtitle(item.id, source.id, baseUrl)
             },
@@ -193,6 +219,9 @@ class MediaRepository @Inject constructor(
             previewUrl = if (item.mediaSources.size <= 1) apiUrl(baseUrl, "Videos/${item.id}/index.bif", "Width" to 320) else null,
             seriesId = item.seriesId,
             seasonId = item.seasonId,
+            userId = session.userId,
+            playSessionId = playbackInfo.playSessionId,
+            isDirectStream = !forceTranscode && !source.supportsDirectPlay && !source.directStreamUrl.isNullOrBlank(),
             isTranscoded = forceTranscode ||
                 (!source.supportsDirectPlay && source.directStreamUrl.isNullOrBlank() &&
                     !source.transcodingUrl.isNullOrBlank()),
@@ -205,7 +234,12 @@ class MediaRepository @Inject constructor(
             accessToken = session.accessToken,
         )
         val source = item.mediaSources.sortedByDescending { it.supportsDirectPlay }.firstOrNull()
-        MediaDetail(item.toMediaItem(baseUrl), source?.mediaStreams.orEmpty().toTrackOptions(), source?.id)
+        MediaDetail(item.toMediaItem(baseUrl).withRecentProgress(session), source?.mediaStreams.orEmpty().toTrackOptions(), source?.id)
+    }
+
+    private fun MediaItem.withRecentProgress(session: Session): MediaItem {
+        val position = progressReporter.recentPosition(session.serverUrl, session.userId, id) ?: return this
+        return copy(playbackPositionMs = position)
     }
 
     private fun List<MediaStreamDto>.toTrackOptions(): List<MediaTrackOption> = mapNotNull { stream ->

@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -43,6 +44,8 @@ fun MediaCard(
     accessToken: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    coverAspectRatio: Float? = null,
+    coverContentScale: ContentScale = ContentScale.Crop,
 ) {
     Card(
         modifier = modifier.width(104.dp).clickable(onClick = onClick),
@@ -53,10 +56,11 @@ fun MediaCard(
             Poster(
                 item = item,
                 accessToken = accessToken,
-                modifier = Modifier.fillMaxWidth().aspectRatio(mediaCoverAspectRatio(item.type)),
+                modifier = Modifier.fillMaxWidth().aspectRatio(coverAspectRatio ?: mediaCoverAspectRatio(item.type)),
+                contentScale = coverContentScale,
             )
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(6.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = (48f * LocalDensity.current.fontScale.coerceIn(1f, 2f)).dp).padding(6.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
@@ -84,6 +88,7 @@ fun Poster(
     item: com.embydog.app.core.model.MediaItem,
     accessToken: String,
     modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     Box(
         modifier = modifier
@@ -98,12 +103,12 @@ fun Poster(
                     .data(item.imageUrl)
                     .headers(headers)
                     .crossfade(true)
-                    .diskCacheKey("${item.id}:${item.imageTag}")
-                    .memoryCacheKey("${item.id}:${item.imageTag}")
+                    .diskCacheKey(com.embydog.app.core.session.privateCacheKey(item.imageUrl, accessToken))
+                    .memoryCacheKey(com.embydog.app.core.session.privateCacheKey(item.imageUrl, accessToken))
                     .build(),
                 contentDescription = item.name,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
             )
         } else {
             Icon(

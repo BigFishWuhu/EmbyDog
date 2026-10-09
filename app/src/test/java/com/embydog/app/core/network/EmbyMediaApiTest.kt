@@ -11,6 +11,22 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 class EmbyMediaApiTest {
+    @Test fun playbackReportsUseAuthenticatedSessionEndpointsAndPositionTicks() = runBlocking {
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(MockResponse().setResponseCode(204)) }
+            val client = api(server)
+            listOf("Sessions/Playing", "Sessions/Playing/Progress", "Sessions/Playing/Stopped").forEach { path ->
+                client.reportPlayback(server.url("/proxy/emby/$path").toString(), "token", "MediaBrowser DeviceId=\"test\"",
+                    PlaybackReportDto("episode", "source", "play-session", 123000000, isPaused = true))
+                val request = server.takeRequest()
+                assertEquals("POST", request.method)
+                assertEquals("/proxy/emby/$path", request.path)
+                assertEquals("token", request.getHeader("X-Emby-Token"))
+                assertTrue(request.getHeader("X-Emby-Authorization")!!.contains("test"))
+                assertTrue(request.body.readUtf8().contains("\"PositionTicks\":123000000"))
+            }
+        }
+    }
     private val json = Json { ignoreUnknownKeys = true }
     private fun api(server: MockWebServer): EmbyApi = Retrofit.Builder().baseUrl(server.url("/"))
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))

@@ -7,6 +7,10 @@ local.properties
 .android-sdk/
 commandlinetools-win.zip
 *.iml
+*.jks
+*.keystore
+__pycache__/
 captures/
+debug/verification/
 .externalNativeBuild/
 .cxx/

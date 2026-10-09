@@ -1,5 +1,6 @@
 package com.embydog.app.feature.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -37,6 +38,8 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
     entryOrientation: PlaybackOrientation = PlaybackOrientation.LANDSCAPE, viewModel: PlayerViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val exitPlayback = { viewModel.stopPlayback(); onBack() }
+    BackHandler(onBack = exitPlayback)
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = LocalContext.current.playerActivity()
     val environment = remember(activity) { activity?.let(::PlayerEnvironment) }
@@ -178,7 +181,7 @@ fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
                 },
                 onEpisodes = { episodesVisible = true },
                 onBusyChange = { controlsBusy = it },
-                onBack = onBack,
+                onBack = exitPlayback,
                 onInteraction = { controlsVisible = true; interaction++ },
                 onToggle = viewModel::togglePlayback,
                 onSeek = viewModel::seekTo,
@@ -195,7 +198,7 @@ fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
             if (episodesVisible && seriesId != null) EpisodePickerDialog(seriesId, state.source?.seasonId,
                 state.source?.accessToken.orEmpty(),
                 state.source?.itemId, onDismiss = { episodesVisible = false },
-                onSelect = { episodesVisible = false; onSelectEpisode(it) })
+                onSelect = { episodesVisible = false; viewModel.stopPlayback(); onSelectEpisode(it) })
         }
     }
 }

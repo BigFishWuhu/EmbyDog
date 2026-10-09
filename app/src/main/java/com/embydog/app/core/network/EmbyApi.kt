@@ -2,6 +2,8 @@ package com.embydog.app.core.network
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.DELETE
@@ -10,6 +12,10 @@ import retrofit2.http.POST
 import retrofit2.http.Url
 
 interface EmbyApi {
+    @POST
+    suspend fun reportPlayback(@Url url: String, @Header("X-Emby-Token") accessToken: String,
+        @Header("X-Emby-Authorization") authorization: String, @Body request: PlaybackReportDto)
+
     @POST
     suspend fun addFavorite(@Url url: String, @Header("X-Emby-Token") accessToken: String)
 
@@ -51,6 +57,21 @@ interface EmbyApi {
         @Body request: PlaybackInfoRequestDto,
     ): PlaybackInfoResponseDto
 }
+
+@Serializable
+@OptIn(ExperimentalSerializationApi::class)
+data class PlaybackReportDto(
+    @SerialName("ItemId") val itemId: String,
+    @SerialName("MediaSourceId") val mediaSourceId: String? = null,
+    @SerialName("PlaySessionId") val playSessionId: String? = null,
+    @SerialName("PositionTicks") val positionTicks: Long,
+    @EncodeDefault @SerialName("IsPaused") val isPaused: Boolean = false,
+    @EncodeDefault @SerialName("CanSeek") val canSeek: Boolean = true,
+    @EncodeDefault @SerialName("PlayMethod") val playMethod: String = "DirectPlay",
+    @SerialName("AudioStreamIndex") val audioStreamIndex: Int? = null,
+    @SerialName("SubtitleStreamIndex") val subtitleStreamIndex: Int? = null,
+    @SerialName("EventName") val eventName: String = "TimeUpdate",
+)
 
 @Serializable
 data class PublicSystemInfoDto(
