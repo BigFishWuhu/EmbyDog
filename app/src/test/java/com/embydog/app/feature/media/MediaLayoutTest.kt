@@ -4,6 +4,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MediaLayoutTest {
+    @Test fun homePostersAreComfortableWithoutMakingTabletsOversized() {
+        assertEquals(120.57f, homePosterWidth(360f), 0.01f)
+        assertEquals(131.89f, homePosterWidth(390f), 0.01f)
+        assertEquals(143.21f, homePosterWidth(420f), 0.01f)
+        assertEquals(152f, homePosterWidth(700f), 0f)
+        assertEquals(152f, homePosterWidth(1400f), 0f)
+    }
+    @Test fun homePostersAdaptToLargeFontsAndNarrowContainers() {
+        assertTrue(homePosterWidth(360f, 1.5f) > homePosterWidth(360f))
+        assertEquals(homePosterWidth(360f, 1.35f), homePosterWidth(360f, 2f), 0f)
+        assertEquals(homePosterWidth(360f), homePosterWidth(360f, 0.8f), 0f)
+        assertEquals(76f, homePosterWidth(100f, 2f), 0f)
+        assertEquals(1f, homePosterWidth(20f), 0f)
+        // Only the home shelf changes; grids keep their existing density.
+        assertEquals(100f, posterMinimumWidth(1f), 0f)
+    }
     @Test fun episodeGridFitsSmallPhonesAndExpandsOnLargerWindows() {
         assertEquals(1, episodeColumnCount(240f))
         assertEquals(2, episodeColumnCount(296f))

@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -32,18 +33,18 @@ internal fun SeasonDropdown(state: EpisodePickerState, onSelect: (String?) -> Un
 }
 
 internal fun LazyListScope.episodeGridItems(episodes: List<MediaItem>, columns: Int, accessToken: String,
-    currentItemId: String?, onSelect: (String) -> Unit) {
+    currentItemId: String?, onSelect: (String) -> Unit, onDownload: ((String) -> Unit)? = null) {
     items(episodes.chunked(columns), key = { row -> "episodes:${row.first().id}" }) { row ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             row.forEach { episode -> EpisodeCard(episode, accessToken, episode.id == currentItemId,
-                { onSelect(episode.id) }, Modifier.weight(1f)) }
+                { onSelect(episode.id) }, Modifier.weight(1f), onDownload?.let { { it(episode.id) } }) }
             repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
         }
     }
 }
 
 @Composable
-private fun EpisodeCard(episode: MediaItem, accessToken: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun EpisodeCard(episode: MediaItem, accessToken: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier, onDownload: (() -> Unit)? = null) {
     Card(modifier.clickable(enabled = episode.canPlay, onClick = onClick), colors = CardDefaults.cardColors(
         containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)) {
         Poster(episode, accessToken, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
@@ -54,6 +55,9 @@ private fun EpisodeCard(episode: MediaItem, accessToken: String, selected: Boole
             Text(episode.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             episode.runtimeMinutes?.let { Text("$it 分钟", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            onDownload?.let { action -> TextButton(onClick = action, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                Icon(Icons.Default.Download, "缓存此集", Modifier.size(18.dp)); Text("缓存", style = MaterialTheme.typography.labelSmall)
+            } }
         }
     }
 }

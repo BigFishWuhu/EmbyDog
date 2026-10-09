@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.StayCurrentLandscape
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.AlertDialog
@@ -91,6 +92,8 @@ fun BoxScope.PlayerControls(
     onTrack: (PlaybackTrackKind, String?) -> Unit,
     onSleepTimer: (Int, SleepTimerAction) -> Unit = { _, _ -> },
     onCancelSleepTimer: () -> Unit = {},
+    onDanmaku: () -> Unit = {},
+    danmakuEnabled: Boolean = false,
 ) {
     var dialog by remember { mutableStateOf<String?>(null) }
     var seekPreview by remember(state.engine) { mutableStateOf<Float?>(null) }
@@ -135,6 +138,10 @@ fun BoxScope.PlayerControls(
                     .padding(horizontal = 12.dp, vertical = 4.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { onInteraction(); onDanmaku() }) {
+                        Icon(Icons.AutoMirrored.Filled.Chat, "弹幕设置", Modifier.size(22.dp),
+                            tint = if (danmakuEnabled) Color(0xFF90CAF9) else Color.White)
+                    }
                     Text(state.engineKind.label + (playback.decoder?.let { " · $it" } ?: ""),
                         Modifier.weight(1f), color = Color.White.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium)

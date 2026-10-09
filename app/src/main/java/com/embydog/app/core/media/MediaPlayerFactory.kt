@@ -7,6 +7,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -29,10 +30,10 @@ class MediaPlayerFactory @Inject constructor(
             .setCache(cache)
             .setCacheKeyFactory { spec -> com.embydog.app.core.session.privateCacheKey(source.serverUrl,
                 source.userId.orEmpty(), source.accessToken, spec.key ?: spec.uri.toString()) }
-            .setUpstreamDataSourceFactory(upstream)
+            .setUpstreamDataSourceFactory(DefaultDataSource.Factory(context, upstream))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(cacheDataSource)
+            .setDataSourceFactory(if (source.offlineId != null) DefaultDataSource.Factory(context) else cacheDataSource)
         val renderersFactory = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
         val subtitles = source.subtitles.map { subtitle ->

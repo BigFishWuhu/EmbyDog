@@ -17,6 +17,7 @@ standard component states and Android 12+ dynamic color.
 - Provide a 2 GiB LRU Media3 playback cache foundation.
 - Preserve reverse-proxy base paths when creating API URLs.
 - Browse media libraries, continue-watching items, and recently added media.
+- Use larger adaptive home-shelf posters with readable two-line titles; search and favorites retain compact grids.
 - Cache authenticated poster images in memory and on disk.
 - View media details and play through Media3 with embedded/external subtitle selection.
 - Switch between Media3, mpv hardware decoding, and mpv software decoding without resetting playback position.
@@ -42,7 +43,7 @@ standard component states and Android 12+ dynamic color.
 - Use high-contrast icon-only player controls with smaller glyphs, 48+ dp touch targets and a compact single-row landscape layout.
 - Show download speed only while the player controls are visible.
 - Keep home/search/favorites as separate bottom-navigation tabs with retained state.
-- Use smaller 2:3 posters with adaptive grid density and inline 16:9 episode thumbnails beneath a season dropdown.
+- Use 2:3 posters with adaptive grid density and inline 16:9 episode thumbnails beneath a season dropdown.
 - Save player entry orientation in application settings: landscape by default, portrait, gravity sensor, or system orientation.
 - Preserve video aspect ratio in both playback engines and inset controls away from system bars/cutouts.
 - Set a session-local sleep timer (1–1440 minutes) to pause or stop and exit the player, with presets, remaining time and cancellation.
@@ -194,6 +195,25 @@ larger responses are rejected. Only eight decoded thumbnail frames are cached.
 Download speed is a one-second sample of bytes read for the current player's video,
 HLS and subtitles, not the codec bitrate or system-wide network traffic. Cache hits
 and periods where the buffer needs no additional data can correctly show zero.
+
+## 弹弹 Play 弹幕
+
+- 应用设置 → 弹弹 Play 弹幕：填写自己申请的 AppId / AppSecret。接入申请见官方开发者中心 https://dev.dandanplay.com ，协议见 https://github.com/kaedei/dandanplay-doc/blob/master/docs/open/README.md 。没有内置其他应用的密钥，AppSecret 使用 Android Keystore 加密保存且不参与系统备份。
+- 播放器的弹幕图标打开紧凑的 Material 面板。显示设置参考 B 站：不透明度、字号、速度、1/4／半屏／3/4／全屏区域、密度、滚动／顶部／底部类型屏蔽、彩色显示、避开底部字幕区域、时间偏移和恢复默认值。设置全应用共享并持久保存。
+- “匹配弹幕”中可根据作品名、集数搜索并手动选择弹幕库；需核对季度与视频版本。关联按 Emby 服务器／用户／视频隔离，下次播放自动加载已关联弹幕。不进行猜测式自动匹配，也不下载视频的前 16 MiB 来计算文件哈希。
+- 使用官方 API v2 路径签名和新版搜索；独立 HTTP 客户端不携带 Emby 凭据。初始 API 请求签名，CDN 重定向不转发接入凭据，并只接受弹弹 Play 域名的 HTTPS 地址。发送给第三方的数据仅为用户输入的作品名／集数、选择的弹幕库编号及接入签名。
+- 支持滚动、顶部和底部弹幕。Canvas 覆盖在 Media3／mpv 视频层上，不拦截播放器手势；以播放器媒体时间驱动，暂停、缓冲、倍速与 seek 同步，不影响音轨和字幕。碰撞避让会舍弃过密弹幕，不承诺显示每条弹幕。
+- 弹幕缓存按接入凭据隔离，有效期 7 天，最多 20 份／64 MiB；单次响应上限 12 MiB、最多保留 20000 条弹幕。支持手动刷新；关闭弹幕会取消正在加载的弹幕请求。此版本不支持发送弹幕、文件哈希自动匹配或第三方地址手动导入。
+
+## 离线缓存
+
+- 影片详情页可以添加原始文件缓存；剧集卡片中的“缓存”可下载指定单集。首页工具栏、应用设置和登录页均有离线缓存入口，服务器不可达或登录凭据失效不影响已完成缓存的播放。
+- 轻量前台下载服务串行处理队列，显示通知、进度和网速。支持暂停、继续、重试和确认删除，默认仅 Wi-Fi；网络切换不符合设置时暂停。进程被系统结束、后台服务到时或手机重启后保留断点，重新打开应用可手动继续，不保证自动唤醒下载。
+- 优先使用官方 `/Items/{Id}/Download` 原文件接口，服务器的账号下载权限仍然生效。当前仅支持默认媒体版本，不缓存直播、HLS、服务器在线转码或受保护媒体。断点需有可靠 ETag / Last-Modified 与 Content-Range；服务器忽略 Range 或无校验标识时从头下载，不会拼接不同版本文件。
+- 原始文件和外置文本字幕保存在应用私有持久目录，不受播放器临时 LRU 缓存清理影响。内嵌音轨、字幕保留在原文件中；外置字幕单份上限 16 MiB，失败会在列表提示。仅接受同服务器下载地址和重定向，不将账号令牌转发给第三方。
+- 缓存清单不保存令牌、密码或认证下载 URL；默认按当前 profile 筛选，也可选择其他本机缓存。移除原 profile 会停止其下载，但不会删除已缓存视频；恢复未完成任务需要重新添加原账号。
+- 完成的缓存直接通过 mpv / Media3 读取本地视频和字幕，不调用详情、PlaybackInfo、服务器转码、预览图或播放进度上报接口。离线续播记录仅保存在本机，暂不补报服务器；离线拖动提供时间预览，弹幕只读取已存在的临时缓存，不联网搜索或刷新。
+- 删除缓存会移除该视频的本机视频、字幕与离线续播位置，不影响 Emby 原文件。卸载应用或清除应用数据也会删除离线文件。
 
 ## Native dependency and distribution
 

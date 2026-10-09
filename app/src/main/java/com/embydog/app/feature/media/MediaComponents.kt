@@ -46,6 +46,7 @@ fun MediaCard(
     modifier: Modifier = Modifier,
     coverAspectRatio: Float? = null,
     coverContentScale: ContentScale = ContentScale.Crop,
+    comfortableTitle: Boolean = false,
 ) {
     Card(
         modifier = modifier.width(104.dp).clickable(onClick = onClick),
@@ -60,13 +61,16 @@ fun MediaCard(
                 contentScale = coverContentScale,
             )
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(min = (48f * LocalDensity.current.fontScale.coerceIn(1f, 2f)).dp).padding(6.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .heightIn(min = ((if (comfortableTitle) 72f else 48f) * LocalDensity.current.fontScale.coerceIn(1f, 2f)).dp)
+                    .padding(if (comfortableTitle) 8.dp else 6.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
                     text = item.name,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
+                    style = if (comfortableTitle) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+                    minLines = if (comfortableTitle) 2 else 1,
+                    maxLines = if (comfortableTitle) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 item.subtitle?.let {

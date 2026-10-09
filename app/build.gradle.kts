@@ -24,8 +24,8 @@ android {
         targetSdk = 35
         versionCode = providers.gradleProperty("releaseVersionCode").orNull?.toInt()?.also {
             require(it in 1..2_100_000_000) { "releaseVersionCode is outside Android's supported range" }
-        } ?: 1
-        versionName = providers.gradleProperty("releaseVersionName").orNull ?: "0.1.0"
+        } ?: 4
+        versionName = providers.gradleProperty("releaseVersionName").orNull ?: "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

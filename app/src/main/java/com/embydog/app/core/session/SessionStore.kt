@@ -13,6 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
 private val Context.sessionDataStore by preferencesDataStore(name = "session")
@@ -32,6 +33,9 @@ class SessionStore internal constructor(private val dataStore: DataStore<Prefere
             active?.let { runCatching { it.session(tokenCipher.decrypt(it.encryptedToken)) }.getOrNull() })
     }
     val session: Flow<Session?> = state.map { it.session }
+
+    suspend fun sessionForProfile(id: String): Session? = read(dataStore.data.first()).profiles
+        .firstOrNull { it.id == id }?.let { it.session(tokenCipher.decrypt(it.encryptedToken)) }
 
     suspend fun save(session: Session) {
         val profile = StoredProfile(profileId(session.serverUrl, session.userId), session.serverUrl, session.serverName,

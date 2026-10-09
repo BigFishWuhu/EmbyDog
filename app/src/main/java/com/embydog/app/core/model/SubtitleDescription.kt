@@ -2,6 +2,7 @@ package com.embydog.app.core.model
 
 import java.util.Locale
 
+@kotlinx.serialization.Serializable
 data class SubtitleMetadata(
     val index: Int = -1,
     val language: String? = null,

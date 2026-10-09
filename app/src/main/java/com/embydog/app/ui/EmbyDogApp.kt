@@ -1,7 +1,10 @@
 package com.embydog.app.ui
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.layout.safeDrawingPadding
 import com.embydog.app.feature.settings.ProfileScreen
 import com.embydog.app.feature.settings.UpdateScreen
+import com.embydog.app.feature.settings.DanmakuSettingsScreen
 import com.embydog.app.feature.settings.UpdateViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +52,7 @@ import com.embydog.app.ui.theme.EmbyDogTheme
 import com.embydog.app.core.settings.AppSettings
 import com.embydog.app.feature.settings.SettingsScreen
 import com.embydog.app.feature.settings.SettingsViewModel
+import com.embydog.app.feature.offline.OfflineScreen
 
 @Composable
 fun EmbyDogApp(sessionViewModel: SessionViewModel = hiltViewModel(), settingsViewModel: SettingsViewModel = hiltViewModel()) {
@@ -57,7 +62,7 @@ fun EmbyDogApp(sessionViewModel: SessionViewModel = hiltViewModel(), settingsVie
         val settingsError by settingsViewModel.error.collectAsStateWithLifecycle()
         when (val state = rootState) {
             RootState.Loading -> LoadingScreen()
-            RootState.SignedOut -> SignedOutProfiles(sessionViewModel)
+            RootState.SignedOut -> SignedOutProfiles(sessionViewModel, settings?.playbackOrientation ?: com.embydog.app.core.settings.PlaybackOrientation.LANDSCAPE)
             is RootState.SignedIn -> key(state.session.serverUrl, state.session.userId, state.session.accessToken) {
                 settings?.let { preferences ->
                     SignedInNavigation(state.session, preferences, settingsError, settingsViewModel, sessionViewModel)
@@ -115,6 +120,7 @@ private fun SignedInNavigation(session: Session, settings: AppSettings, settings
                 onOpenItem = openItem,
                 onSettings = openSettings,
                 onProfiles = { navController.navigate("profiles") { launchSingleTop = true } },
+                onOffline = { navController.navigate("offline") { launchSingleTop = true } },
             )
         }
         listOf("search", "favorites").forEach { mode ->
@@ -125,8 +131,14 @@ private fun SignedInNavigation(session: Session, settings: AppSettings, settings
         composable("settings") {
             SettingsScreen(settings, settingsError, settingsViewModel::setOrientation,
                 onBack = navController::navigateUp, onLogout = sessionViewModel::logout,
-                onProfiles = { navController.navigate("profiles") }, onUpdate = { navController.navigate("updates") })
+                onProfiles = { navController.navigate("profiles") }, onUpdate = { navController.navigate("updates") },
+                onDanmaku = { navController.navigate("danmaku-settings") }, onOffline = { navController.navigate("offline") })
         }
+        composable("offline") { OfflineScreen(navController::navigateUp, { navController.navigate("offline-player/$it") }) }
+        composable("offline-player/{offlineId}", arguments = listOf(navArgument("offlineId") { type = NavType.StringType })) {
+            PlayerScreen(onBack = navController::navigateUp, entryOrientation = settings.playbackOrientation)
+        }
+        composable("danmaku-settings") { DanmakuSettingsScreen(onBack = navController::navigateUp) }
         composable("profiles") {
             val profiles by sessionViewModel.profiles.collectAsStateWithLifecycle()
             val error by sessionViewModel.profileError.collectAsStateWithLifecycle()
@@ -206,16 +218,34 @@ private fun LoginRoute(viewModel: LoginViewModel = hiltViewModel(), onBack: (() 
 }
 
 @Composable
-private fun SignedOutProfiles(viewModel: SessionViewModel) {
+private fun SignedOutProfiles(viewModel: SessionViewModel, orientation: com.embydog.app.core.settings.PlaybackOrientation) {
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val error by viewModel.profileError.collectAsStateWithLifecycle()
     val busy by viewModel.profileBusy.collectAsStateWithLifecycle()
     var showing by remember { mutableStateOf(false) }
-    if (showing) ProfileScreen(profiles, error, busy, viewModel::selectProfile, viewModel::removeProfile,
+    var offline by remember { mutableStateOf(false) }
+    if (offline) SignedOutOffline(orientation) { offline = false }
+    else if (showing) ProfileScreen(profiles, error, busy, viewModel::selectProfile, viewModel::removeProfile,
         { showing = false }, { showing = false })
-    else Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-        LoginRoute()
-        if (profiles.profiles.isNotEmpty()) TextButton(onClick = { showing = true }, modifier = Modifier.align(Alignment.TopEnd)) { Text("已保存的 profiles") }
+    else Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            LoginRoute()
+            if (profiles.profiles.isNotEmpty()) TextButton(onClick = { showing = true }, modifier = Modifier.align(Alignment.TopEnd)) { Text("已保存的 profiles") }
+        }
+        TextButton(onClick = { offline = true }, modifier = Modifier.fillMaxWidth()) { Text("查看离线缓存（无需连接服务器）") }
+    }
+}
+
+@Composable
+private fun SignedOutOffline(orientation: com.embydog.app.core.settings.PlaybackOrientation, onBack: () -> Unit) {
+    val controller = rememberNavController()
+    val current by controller.currentBackStackEntryAsState()
+    BackHandler(enabled = current?.destination?.route == "offline", onBack = onBack)
+    NavHost(controller, "offline") {
+        composable("offline") { OfflineScreen(onBack, { controller.navigate("offline-player/$it") }) }
+        composable("offline-player/{offlineId}", arguments = listOf(navArgument("offlineId") { type = NavType.StringType })) {
+            PlayerScreen(onBack = controller::navigateUp, entryOrientation = orientation)
+        }
     }
 }
 

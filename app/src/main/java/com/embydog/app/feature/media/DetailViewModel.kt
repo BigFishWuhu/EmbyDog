@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import com.embydog.app.core.offline.offlineMessage
 
 data class DetailUiState(
     val isLoading: Boolean = true,
@@ -27,12 +28,15 @@ data class DetailUiState(
     val playbackTarget: MediaItem? = null,
     val isTargetLoading: Boolean = false,
     val targetError: String? = null,
+    val isCacheAdding: Boolean = false,
+    val cacheMessage: String? = null,
 )
 
 @HiltViewModel
 class DetailViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val repository: MediaRepository,
+    private val offline: com.embydog.app.core.offline.OfflineManager,
 ) : ViewModel() {
     private val itemId = requireNotNull(savedStateHandle.get<String>("itemId"))
     private val _state = MutableStateFlow(DetailUiState())
@@ -45,6 +49,19 @@ class DetailViewModel @Inject constructor(
 
     fun retry() = load()
     fun refresh() = load(refresh = true)
+
+    fun download(itemId: String? = null) {
+        val target = itemId ?: _state.value.playbackTarget?.id ?: return
+        if (_state.value.isCacheAdding) return
+        val selection = if (target == _state.value.item?.id) _state.value.selection else PlaybackSelection()
+        _state.update { it.copy(isCacheAdding = true, cacheMessage = null) }
+        viewModelScope.launch {
+            try { val message = offline.enqueue(target, selection); _state.update { it.copy(cacheMessage = message) } }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { _state.update { it.copy(cacheMessage = error.offlineMessage()) } }
+            finally { _state.update { it.copy(isCacheAdding = false) } }
+        }
+    }
 
     fun toggleFavorite() {
         val item = _state.value.item ?: return
@@ -80,6 +97,7 @@ class DetailViewModel @Inject constructor(
                     selection = PlaybackSelection(savedStateHandle["selectedAudio"],
                         savedStateHandle["selectedSubtitle"], detail.mediaSourceId),
                     playbackTarget = detail.item.takeIf { it.canPlay }, isTargetLoading = detail.item.type == "Series",
+                    isCacheAdding = _state.value.isCacheAdding, cacheMessage = _state.value.cacheMessage,
                 )
                 if (detail.item.type == "Series") {
                     try {

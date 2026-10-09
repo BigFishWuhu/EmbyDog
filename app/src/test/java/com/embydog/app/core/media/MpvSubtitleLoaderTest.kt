@@ -17,6 +17,16 @@ class MpvSubtitleLoaderTest {
 
     private fun track(url: String) = SubtitleTrack(url, "text/x-ssa", "zh", "中文字幕", true, false)
 
+    @Test fun persistentOfflineSubtitlesAreNeverDeletedByLoader() {
+        val subtitle = temporary.newFile("offline.ass").apply { writeText("[Script Info]\nTitle: local") }
+        MpvSubtitleLoader(OkHttpClient(), temporary.newFolder()).use { loader ->
+            var ready = false
+            loader.load(1, track(subtitle.toURI().toString()), { assertEquals(subtitle, it); ready = true }, { fail() })
+            assertTrue(ready)
+        }
+        assertTrue(subtitle.exists())
+    }
+
     @Test fun loadingIsAsynchronousAndDownloadedFilesAreCleanedUp() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("[Script Info]\nTitle: test").setHeadersDelay(250, TimeUnit.MILLISECONDS))

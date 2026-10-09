@@ -27,6 +27,12 @@ internal class MpvSubtitleLoader(client: OkHttpClient, private val directory: Fi
         cancel()
         val requestGeneration = generation
         files[index]?.let { onReady(it); return }
+        if (track.uri.startsWith("file:")) {
+            val local = runCatching { File(java.net.URI(track.uri)).takeIf { it.isFile } }.getOrNull()
+            if (local != null) onReady(local) else onFailure()
+            // Persistent offline subtitles are not owned by this temporary loader.
+            return
+        }
         val call = client.newCall(Request.Builder().url(track.uri).build())
         activeCall = call
         try {

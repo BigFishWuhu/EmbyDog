@@ -1,5 +1,7 @@
 package com.embydog.app.core.model
 
+import kotlinx.serialization.Serializable
+
 data class MediaItem(
     val id: String,
     val name: String,
@@ -32,6 +34,7 @@ data class MediaSection(
 
 data class MediaPage(val items: List<MediaItem>, val totalCount: Int)
 
+@Serializable
 data class SubtitleTrack(
     val uri: String,
     val mimeType: String,
@@ -45,6 +48,7 @@ data class SubtitleTrack(
 
 enum class MediaTrackKind { AUDIO, SUBTITLE }
 
+@Serializable
 data class MediaTrackOption(
     val index: Int,
     val kind: MediaTrackKind,
@@ -58,6 +62,7 @@ data class MediaTrackOption(
 )
 
 // null = server/player default, -1 = explicitly disable subtitles.
+@Serializable
 data class PlaybackSelection(
     val audioIndex: Int? = null,
     val subtitleIndex: Int? = null,
@@ -88,4 +93,7 @@ data class PlaybackSource(
     val userId: String? = null,
     val playSessionId: String? = null,
     val isDirectStream: Boolean = false,
+    val seriesTitle: String? = null,
+    val episodeNumber: Int? = null,
+    val offlineId: String? = null,
 )

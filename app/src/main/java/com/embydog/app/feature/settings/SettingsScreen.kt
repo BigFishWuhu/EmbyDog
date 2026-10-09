@@ -16,7 +16,7 @@ import com.embydog.app.core.settings.PlaybackOrientation
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(settings: AppSettings, error: String?, onOrientation: (PlaybackOrientation) -> Unit,
-    onBack: () -> Unit, onLogout: () -> Unit, onProfiles: () -> Unit = {}, onUpdate: () -> Unit = {}) {
+    onBack: () -> Unit, onLogout: () -> Unit, onProfiles: () -> Unit = {}, onUpdate: () -> Unit = {}, onDanmaku: () -> Unit = {}, onOffline: () -> Unit = {}) {
     var confirmLogout by remember { mutableStateOf(false) }
     Scaffold(topBar = {
         TopAppBar(title = { Text("应用设置") }, navigationIcon = {
@@ -25,8 +25,10 @@ fun SettingsScreen(settings: AppSettings, error: String?, onOrientation: (Playba
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(vertical = 12.dp)) {
             item {
+                ListItem(modifier = Modifier.clickable(onClick = onOffline), headlineContent = { Text("离线缓存") }, supportingContent = { Text("下载原始视频，断网或服务器不可用时播放") })
                 ListItem(modifier = Modifier.clickable(onClick = onProfiles), headlineContent = { Text("Profiles") }, supportingContent = { Text("添加、切换或移除服务器账号") })
                 ListItem(modifier = Modifier.clickable(onClick = onUpdate), headlineContent = { Text("检查更新") }, supportingContent = { Text("从 GitHub 下载正式版更新") })
+                ListItem(modifier = Modifier.clickable(onClick = onDanmaku), headlineContent = { Text("弹弹 Play 弹幕") }, supportingContent = { Text("接入配置与弹幕显示设置") })
                 HorizontalDivider()
             }
             item {

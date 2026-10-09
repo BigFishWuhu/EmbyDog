@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,6 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,6 +46,7 @@ fun HomeScreen(
     onOpenItem: (MediaItem) -> Unit,
     onSettings: () -> Unit,
     onProfiles: () -> Unit = {},
+    onOffline: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -58,6 +61,7 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(session.serverName) },
                 actions = {
+                    IconButton(onClick = onOffline) { Icon(Icons.Default.Download, "离线缓存") }
                     IconButton(onClick = onProfiles) { Icon(Icons.Default.AccountCircle, "切换 profile") }
                     IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
                         if (state.isRefreshing) {
@@ -98,7 +102,7 @@ fun HomeScreen(
                 }
                 if (state.views.isNotEmpty()) {
                     item {
-                        MediaRow(
+                        HomeMediaRow(
                             title = "媒体库",
                             items = state.views,
                             accessToken = session.accessToken,
@@ -108,7 +112,7 @@ fun HomeScreen(
                 }
                 if (state.resumeItems.isNotEmpty()) {
                     item {
-                        MediaRow(
+                        HomeMediaRow(
                             title = "继续观看",
                             items = state.resumeItems,
                             accessToken = session.accessToken,
@@ -118,7 +122,7 @@ fun HomeScreen(
                 }
                 if (state.latestItems.isNotEmpty()) {
                     item {
-                        MediaRow(
+                        HomeMediaRow(
                             title = "最近添加",
                             items = state.latestItems,
                             accessToken = session.accessToken,
@@ -143,29 +147,34 @@ fun HomeScreen(
 }
 
 @Composable
-private fun MediaRow(
+internal fun HomeMediaRow(
     title: String,
     items: List<MediaItem>,
     accessToken: String,
     onItemClick: (MediaItem) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-    val posterWidth = ((maxWidth - 24.dp) / 3.25f - 8.dp).coerceIn(88.dp, 120.dp)
-    androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(horizontal = 12.dp),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(items, key = { it.id }) { item ->
-                MediaCard(item, accessToken, onClick = { onItemClick(item) }, modifier = Modifier.width(posterWidth))
+        val posterWidth = homePosterWidth(maxWidth.value, LocalDensity.current.fontScale).dp
+        androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = title,
+                modifier = Modifier.padding(horizontal = 12.dp),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(items, key = { it.id }) { item ->
+                    MediaCard(
+                        item, accessToken,
+                        onClick = { onItemClick(item) },
+                        modifier = Modifier.width(posterWidth),
+                        comfortableTitle = true,
+                    )
+                }
             }
         }
-    }
     }
 }

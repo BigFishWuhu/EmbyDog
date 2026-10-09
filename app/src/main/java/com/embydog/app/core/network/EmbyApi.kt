@@ -137,6 +137,7 @@ data class MediaSourceDto(
     @SerialName("Id") val id: String = "",
     @SerialName("Name") val name: String = "",
     @SerialName("Container") val container: String = "",
+    @SerialName("Size") val size: Long? = null,
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     @SerialName("SupportsDirectPlay") val supportsDirectPlay: Boolean = false,
     @SerialName("SupportsDirectStream") val supportsDirectStream: Boolean = false,

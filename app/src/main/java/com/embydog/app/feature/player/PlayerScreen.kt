@@ -35,9 +35,15 @@ import com.embydog.app.core.settings.PlaybackOrientation
 import kotlinx.coroutines.delay
 
 @Composable
-fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
-    entryOrientation: PlaybackOrientation = PlaybackOrientation.LANDSCAPE, viewModel: PlayerViewModel = hiltViewModel()) {
+fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit = {},
+    entryOrientation: PlaybackOrientation = PlaybackOrientation.LANDSCAPE, viewModel: PlayerViewModel = hiltViewModel(),
+    danmakuViewModel: DanmakuViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val danmaku by danmakuViewModel.state.collectAsStateWithLifecycle()
+    var danmakuVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(state.source?.itemId, state.source?.serverUrl, state.source?.userId) {
+        state.source?.let(danmakuViewModel::attach)
+    }
     val exitPlayback = { viewModel.stopPlayback(); onBack() }
     BackHandler(onBack = exitPlayback)
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -79,8 +85,8 @@ fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
             viewModel.setForeground(false)
         }
     }
-    LaunchedEffect(controlsVisible, interaction, state.playback.isPlaying, state.engine, controlsBusy, gestureActive, episodesVisible) {
-        if (controlsVisible && state.playback.isPlaying && !controlsBusy && !gestureActive && !episodesVisible) {
+    LaunchedEffect(controlsVisible, interaction, state.playback.isPlaying, state.engine, controlsBusy, gestureActive, episodesVisible, danmakuVisible) {
+        if (controlsVisible && state.playback.isPlaying && !controlsBusy && !gestureActive && !episodesVisible && !danmakuVisible) {
             delay(5000)
             controlsVisible = false
         }
@@ -103,6 +109,7 @@ fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
+                    DanmakuOverlay(danmaku, state.playback)
                     Box(Modifier.fillMaxSize().pointerInput(engine, environment) {
                         var brightnessGesture = false
                         var axis = GestureAxis.UNDECIDED
@@ -192,8 +199,12 @@ fun PlayerScreen(onBack: () -> Unit, onSelectEpisode: (String) -> Unit,
                 onTrack = viewModel::selectTrack,
                 onSleepTimer = viewModel::setSleepTimer,
                 onCancelSleepTimer = viewModel::cancelSleepTimer,
+                onDanmaku = { danmakuVisible = true },
+                danmakuEnabled = danmaku.display.enabled && danmaku.selected != null,
             )
             PlayerGestureFeedback(state.seekPreview, gestureHint, state.playback.durationMs, Modifier.align(Alignment.Center))
+            if (danmakuVisible) DanmakuSettingsPanel(danmaku, danmakuViewModel::updateDisplay, danmakuViewModel::search,
+                danmakuViewModel::select, danmakuViewModel::reload, onDismiss = { danmakuVisible = false; interaction++ })
             val seriesId = state.source?.seriesId
             if (episodesVisible && seriesId != null) EpisodePickerDialog(seriesId, state.source?.seasonId,
                 state.source?.accessToken.orEmpty(),

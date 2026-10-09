@@ -32,7 +32,7 @@ class MpvPlaybackEngine(
         Thread(runnable, "mpv-playback").apply { isDaemon = true }
     }
     private val meter = PlaybackBandwidthMeter()
-    private val gateway = MpvHttpGateway(source, client, meter)
+    private val gateway = if (source.offlineId == null) MpvHttpGateway(source, client, meter) else null
     private val subtitleLoader = MpvSubtitleLoader(client.forPlayback(source, meter), File(context.cacheDir, "mpv-subtitles"))
     private val automaticModes = PlaybackTrackKind.entries.filterTo(mutableSetOf()) {
         (if (it == PlaybackTrackKind.AUDIO) source.selection.audioIndex else source.selection.subtitleIndex) == null
@@ -68,7 +68,7 @@ class MpvPlaybackEngine(
                         if (ended) {
                             publish(state.value.copy(hasEnded = true, isPlaying = false, isBuffering = false))
                         } else {
-                            fail(gateway.lastFailure ?: PlaybackFailureKind.UNKNOWN, "兼容播放器无法完成播放")
+                            fail(gateway?.lastFailure ?: PlaybackFailureKind.UNKNOWN, "兼容播放器无法完成播放")
                         }
                     }
                     MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> updateSnapshot(player)
@@ -102,7 +102,7 @@ class MpvPlaybackEngine(
                     player.setPropertyString("vo", "gpu")
                     if (!opened) {
                         opened = true
-                        player.command(arrayOf("loadfile", gateway.register(source.uri)))
+                        player.command(arrayOf("loadfile", gateway?.register(source.uri) ?: File(java.net.URI(source.uri)).absolutePath))
                     }
                 }
             }
@@ -354,7 +354,7 @@ class MpvPlaybackEngine(
     override fun release() {
         if (released) return
         released = true
-        gateway.close()
+        gateway?.close()
         subtitleLoader.cancel()
         worker.execute {
             try {

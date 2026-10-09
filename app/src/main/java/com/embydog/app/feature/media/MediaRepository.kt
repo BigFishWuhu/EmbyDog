@@ -31,6 +31,31 @@ class MediaRepository @Inject constructor(
     private val sessionStore: SessionStore,
     private val progressReporter: PlaybackProgressReporter,
 ) {
+    /** Preparation is metadata-only: do not create a PlaybackInfo session or open live streams. */
+    suspend fun getOfflinePlan(itemId: String, selection: PlaybackSelection, owner: Session? = null): com.embydog.app.core.offline.OfflinePlan {
+        val session = owner ?: requireNotNull(sessionStore.session.first()) { "请先登录服务器" }
+        val baseUrl = EmbyUrl.normalize(session.serverUrl)
+        val item = api.getItem(apiUrl(baseUrl, "Users/${session.userId}/Items/$itemId", "Fields" to "$ITEM_FIELDS,MediaSources"), session.accessToken)
+        check(item.type in setOf("Movie", "Episode", "Video", "Audio")) { "仅支持缓存原始影片或单集，不支持直播" }
+        val source = requireNotNull(item.mediaSources.firstOrNull()) { "服务器没有返回原始媒体文件" }
+        // The documented /Items/{Id}/Download API selects the primary file, not an arbitrary version.
+        check(selection.mediaSourceId == null || selection.mediaSourceId == source.id) { "此接口仅支持缓存默认媒体版本" }
+        val profile = com.embydog.app.core.session.profileId(session.serverUrl, session.userId)
+        val record = com.embydog.app.core.offline.OfflineRecord(
+            id = com.embydog.app.core.session.privateCacheKey(profile, itemId, source.id), profileId = profile,
+            profileName = "${session.serverName} · ${session.userName}", serverUrl = baseUrl.toString(), userId = session.userId,
+            itemId = item.id, title = item.name, container = com.embydog.app.core.offline.safeContainer(source.container),
+            durationMs = (source.runTimeTicks ?: item.runTimeTicks ?: 0) / TICKS_PER_MILLISECOND,
+            selection = selection.copy(mediaSourceId = source.id), tracks = source.mediaStreams.toTrackOptions(),
+            seriesTitle = item.seriesName, episodeNumber = item.indexNumber, totalBytes = source.size ?: -1,
+            positionMs = (item.userData?.playbackPositionTicks ?: 0) / TICKS_PER_MILLISECOND,
+        )
+        val external = source.mediaStreams.filter { it.type == "Subtitle" && it.isExternal }
+        val text = external.filter { it.codec.lowercase() in setOf("srt", "subrip", "vtt", "webvtt", "ass", "ssa", "ttml", "dfxp") || (it.codec.isBlank() && it.isTextSubtitleStream) }
+        return com.embydog.app.core.offline.OfflinePlan(record, apiUrl(baseUrl, "Items/$itemId/Download"),
+            text.mapNotNull { it.toExternalSubtitle(item.id, source.id, baseUrl) }, session.accessToken, external.size - text.size)
+    }
+
     suspend fun searchItems(query: String, startIndex: Int = 0, limit: Int = 40): MediaPage = withSession { session, baseUrl ->
         val result = api.getItems(apiUrl(baseUrl, "Users/${session.userId}/Items",
             "SearchTerm" to query.trim(), "Recursive" to true, "IncludeItemTypes" to "Movie,Series,Episode,Video,Audio",
@@ -219,6 +244,8 @@ class MediaRepository @Inject constructor(
             previewUrl = if (item.mediaSources.size <= 1) apiUrl(baseUrl, "Videos/${item.id}/index.bif", "Width" to 320) else null,
             seriesId = item.seriesId,
             seasonId = item.seasonId,
+            seriesTitle = item.seriesName,
+            episodeNumber = item.indexNumber,
             userId = session.userId,
             playSessionId = playbackInfo.playSessionId,
             isDirectStream = !forceTranscode && !source.supportsDirectPlay && !source.directStreamUrl.isNullOrBlank(),

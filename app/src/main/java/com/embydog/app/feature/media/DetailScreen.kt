@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.*
@@ -30,6 +31,7 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
     onOpenEpisode: (String) -> Unit, viewModel: DetailViewModel = hiltViewModel(),
     episodeViewModel: EpisodePickerViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val notificationPermission = com.embydog.app.feature.offline.rememberOfflinePermissionRequest()
     val episodes by episodeViewModel.state.collectAsStateWithLifecycle()
     val currentItem = state.item
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -61,6 +63,18 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
                 val compactHeader = maxWidth >= 320.dp && LocalDensity.current.fontScale < 1.5f
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
                     item {
+                        if (compactHeader) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Poster(currentItem, accessToken, Modifier.width(104.dp).aspectRatio(mediaCoverAspectRatio(currentItem.type)))
+                            Column(Modifier.weight(1f)) {
+                                Text(currentItem.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                Text(listOfNotNull(currentItem.productionYear?.toString(), currentItem.runtimeMinutes?.let { "$it 分钟" },
+                                    currentItem.type.toDisplayType()).joinToString(" · "), Modifier.padding(top = 8.dp),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Poster(currentItem, accessToken, Modifier.width(96.dp).aspectRatio(mediaCoverAspectRatio(currentItem.type)))
+                            Text(currentItem.name, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleLarge)
+                        }
                         if (currentItem.canPlay || currentItem.type == "Series") {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
                                 val target = state.playbackTarget
@@ -74,19 +88,13 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
                                     listOfNotNull(target.seasonNumber?.let { "第 $it 季" }, target.episodeNumber?.let { "第 $it 集" }, target.name).joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 state.targetError?.let { message -> TextButton(onClick = viewModel::refresh) { Text("$message · 重试") } }
+                                OutlinedButton(onClick = { notificationPermission(); viewModel.download() },
+                                    enabled = target != null && !state.isTargetLoading && !state.isCacheAdding, modifier = Modifier.fillMaxWidth()) {
+                                    Icon(Icons.Default.Download, null, Modifier.size(20.dp))
+                                    Text(if (state.isCacheAdding) "正在添加缓存…" else if (currentItem.type == "Series") "缓存待播放单集" else "离线缓存", Modifier.padding(start = 8.dp))
+                                }
+                                state.cacheMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                             }
-                        }
-                        if (compactHeader) Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Poster(currentItem, accessToken, Modifier.width(104.dp).aspectRatio(mediaCoverAspectRatio(currentItem.type)))
-                            Column(Modifier.weight(1f)) {
-                                Text(currentItem.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                                Text(listOfNotNull(currentItem.productionYear?.toString(), currentItem.runtimeMinutes?.let { "$it 分钟" },
-                                    currentItem.type.toDisplayType()).joinToString(" · "), Modifier.padding(top = 8.dp),
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        } else Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Poster(currentItem, accessToken, Modifier.width(96.dp).aspectRatio(mediaCoverAspectRatio(currentItem.type)))
-                            Text(currentItem.name, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleLarge)
                         }
                         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                             state.actionMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -101,7 +109,8 @@ fun DetailScreen(accessToken: String, onBack: () -> Unit, onPlay: (String, Playb
                             Text("剧集", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
                             SeasonDropdown(episodes, episodeViewModel::selectSeason, Modifier.fillMaxWidth().padding(horizontal = 12.dp))
                         }
-                        episodeGridItems(episodes.episodes, columns, accessToken, currentItem.id, onOpenEpisode)
+                        episodeGridItems(episodes.episodes, columns, accessToken, currentItem.id, onOpenEpisode,
+                            onDownload = { notificationPermission(); viewModel.download(it) })
                         episodeLoadingItems(episodes, episodeViewModel::retry, episodeViewModel::loadMore)
                     }
                     if (currentItem.overview.isNotBlank()) item {

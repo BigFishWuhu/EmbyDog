@@ -67,8 +67,10 @@ class PlayerViewModel @Inject constructor(
     private val engineFactory: PlaybackEngineFactory,
     private val httpClient: OkHttpClient,
     private val progressReporter: PlaybackProgressReporter,
+    private val offlineStore: com.embydog.app.core.offline.OfflineStore,
 ) : ViewModel() {
-    private val itemId = requireNotNull(savedStateHandle.get<String>("itemId"))
+    private val offlineId = savedStateHandle.get<String>("offlineId")
+    private val itemId = savedStateHandle.get<String>("itemId") ?: requireNotNull(offlineId)
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
     private val fallbackPolicy = PlaybackFallbackPolicy()
@@ -138,7 +140,7 @@ class PlayerViewModel @Inject constructor(
         wantedPlayback = !_state.value.playback.isPlaying
         if (_state.value.playback.hasEnded) {
             seekTo(0)
-            _state.value.source?.let { source ->
+            _state.value.source?.takeIf { it.offlineId == null }?.let { source ->
                 reportSession = progressReporter.open(source, reportSnapshot(0).copy(hasEnded = false, isPlaying = true))
             }
         }
@@ -166,6 +168,10 @@ class PlayerViewModel @Inject constructor(
         val origin = originMs ?: _state.value.seekPreview?.originMs ?: _state.value.playback.positionMs
         _state.update { it.copy(seekPreview = SeekPreviewUiState(target, origin,
             bitmap = it.seekPreview?.bitmap, frameTimeMs = it.seekPreview?.frameTimeMs)) }
+        if (offlineId != null) {
+            _state.update { it.copy(seekPreview = it.seekPreview?.copy(isLoading = false, message = "离线播放")) }
+            return
+        }
         if (previewJob?.isActive == true) return
         previewJob = viewModelScope.launch {
             while (isActive) {
@@ -229,13 +235,19 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun reportProgress(positionMs: Long? = null) {
+        saveOfflinePosition(positionMs)
         reportSession?.progress(reportSnapshot(positionMs))
         lastReportAt = SystemClock.elapsedRealtime()
     }
 
     private fun stopReporting() {
+        saveOfflinePosition()
         reportSession?.stop(reportSnapshot())
         reportSession = null
+    }
+
+    private fun saveOfflinePosition(positionMs: Long? = null) {
+        offlineId?.let { id -> offlineStore.savePositionAsync(id, reportSnapshot(positionMs).positionMs) }
     }
 
     private fun releaseEngine(reportStop: Boolean = false) {
@@ -253,7 +265,7 @@ class PlayerViewModel @Inject constructor(
     private fun startEngine(source: PlaybackSource, kind: PlaybackEngineKind, notice: String? = null) {
         if (reportSession?.source?.playSessionId != source.playSessionId || reportSession?.source?.itemId != source.itemId) stopReporting()
         releaseEngine()
-        previewLoader = PlaybackPreviewLoader(source, httpClient)
+        previewLoader = if (source.offlineId == null) PlaybackPreviewLoader(source, httpClient) else null
         fallbackPolicy.record(kind)
         _state.value = PlayerUiState(
             isLoading = false, source = source, engineKind = kind,
@@ -267,7 +279,7 @@ class PlayerViewModel @Inject constructor(
             return
         }
         activeEngine = engine
-        if (reportSession == null) reportSession = progressReporter.open(source,
+        if (reportSession == null && source.offlineId == null) reportSession = progressReporter.open(source,
             reportSnapshot(source.startPositionMs).copy(isPlaying = wantedPlayback && foreground))
         engine.setSpeed(playbackSpeed)
         _state.update { it.copy(engine = engine) }
@@ -292,7 +304,10 @@ class PlayerViewModel @Inject constructor(
                 next.kind,
                 "${failure.message}，已切换${next.kind.label}",
             )
-            PlaybackFallback.Transcode -> load(forceTranscode = true)
+            PlaybackFallback.Transcode -> if (source.offlineId == null) load(forceTranscode = true) else {
+                releaseEngine(reportStop = true)
+                _state.update { it.copy(engine = null, errorMessage = "此文件无法由本机解码，离线模式不可使用服务器转码") }
+            }
             PlaybackFallback.Stop -> {
                 releaseEngine(reportStop = true)
                 _state.update { it.copy(engine = null, errorMessage = failure.message) }
@@ -306,7 +321,8 @@ class PlayerViewModel @Inject constructor(
         _state.update { it.copy(isLoading = true, engine = null, errorMessage = null) }
         loadJob = viewModelScope.launch {
             try {
-                val source = repository.getPlaybackSource(itemId, forceTranscode, selection)
+                val source = if (offlineId != null) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { offlineStore.playback(offlineId) }
+                    else repository.getPlaybackSource(itemId, forceTranscode, selection)
                 selection = source.selection
                 startEngine(
                     source.copy(startPositionMs = lastPositionMs ?: source.startPositionMs),

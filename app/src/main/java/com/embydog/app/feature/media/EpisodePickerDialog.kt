@@ -21,9 +21,9 @@ fun EpisodePickerDialog(seriesId: String, initialSeason: String?, accessToken: S
             Column {
                 SeasonDropdown(state, viewModel::selectSeason)
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-                    episodeGridItems(state.episodes, columns, accessToken, currentItemId) {
+                    episodeGridItems(state.episodes, columns, accessToken, currentItemId, onSelect = {
                         if (it == currentItemId) onDismiss() else onSelect(it)
-                    }
+                    })
                     episodeLoadingItems(state, viewModel::retry, viewModel::loadMore)
                 }
             }
